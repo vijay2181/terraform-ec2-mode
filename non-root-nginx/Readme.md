@@ -1,6 +1,15 @@
 # run nginx as non root user
 
 ```
+
+kubectl create secret docker-registry artifactory-secret --docker-server=testproject1234.jfrog.io --docker-username="devopsvijay10@gmail.com" --docker-password=”” --docker-email=”OPTIONAL_EMAIL”
+
+kubectl create secret docker-registry artifactory-secret --docker-server=testproject1234.jfrog.io --docker-username="devopsvijay10@gmail.com" --docker-password=”” --docker-email=”OPTIONAL_EMAIL” -n rapid
+
+docker build -t rapid-nginx:latest .
+docker tag rapid-nginx:latest testproject1234.jfrog.io/test-docker-docker-local/rapid-nginx:v1
+docker push testproject1234.jfrog.io/test-docker-docker-local/rapid-nginx:v1
+
 kubectl apply -f rapid-ngnix.yaml -n rapid
 kubectl get pods -n rapid
 
