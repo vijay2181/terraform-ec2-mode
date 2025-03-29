@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-rapid
+  namespace: rapid  # Ensure this namespace exists
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-rapid
+  template:
+    metadata:
+      labels:
+        app: nginx-rapid
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000  # Ensuring it aligns with `runAsUser`
+        fsGroup: 1000  # Ensures correct file system permissions inside the container
+        seccompProfile:
+          type: RuntimeDefault  # Apply seccomp at pod level
+      containers:
+        - name: nginx-rapid
+          image: testproject1234.jfrog.io/test-docker-docker-local/rapid-nginx:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault  # Ensures security sandboxing
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      imagePullSecrets:
+        - name: artifactory-secret  # Ensure this secret exists in the "rapid" namespace
