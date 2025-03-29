@@ -89,4 +89,53 @@ kubectl apply -f rapid-ngnix.yaml
 kubectl apply -f rapid-service.yaml 
 
 
+implementation:
+--------------
+[ec2-user@ip-10-0-4-172 ~]$ kubectl apply -f rapid-ngnix.yaml -n rapid
+deployment.apps/nginx-rapid created
+[ec2-user@ip-10-0-4-172 ~]$ kubectl apply -f rapid-service.yaml -n rapid
+service/nginx-rapid-service created
+
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get pods -n rapid
+NAME                           READY   STATUS    RESTARTS   AGE
+nginx-rapid-6d5788ff99-q9plm   1/1     Running   0          34s
+nginx-rapid-6d5788ff99-x7kbr   1/1     Running   0          34s
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get svc -n rapid
+NAME                  TYPE       CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+nginx-rapid-service   NodePort   172.20.147.123   <none>        80:30080/TCP   28s
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get nodes -n rapid -o wide
+NAME                         STATUS   ROLES    AGE   VERSION                INTERNAL-IP   EXTERNAL-IP   OS-IMAGE         KERNEL-VERSION                  CONTAINER-RUNTIME
+ip-10-0-1-248.ec2.internal   Ready    <none>   29h   v1.27.16-eks-aeac579   10.0.1.248    <none>        Amazon Linux 2   5.10.234-225.910.amzn2.x86_64   containerd://1.7.25
+ip-10-0-2-158.ec2.internal   Ready    <none>   29h   v1.27.16-eks-aeac579   10.0.2.158    <none>        Amazon Linux 2   5.10.234-225.910.amzn2.x86_64   containerd://1.7.25
+
+-> GOTO JUMP SERVER AND ACCESS SERVICE
+
+[ec2-user@ip-10-0-4-172 ~]$ curl http://10.0.1.248:30080
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+html { color-scheme: light dark; }
+body { width: 35em; margin: 0 auto;
+font-family: Tahoma, Verdana, Arial, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+
+
 ```
