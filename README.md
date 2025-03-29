@@ -325,23 +325,248 @@ Would you like to expose it externally using NodePort? 🚀
 
 
 
+# Testing with Gatekeeper inside cluster
+# k8s-opa-gatekeeper
+
+This project is demoing OPA Gatekeeper with Kubernetes. Gatekeeper is an opensource project supported by CNCF. It aims for creating policies to manage Kubernetes like:
+
+- Enforcing labels on namespaces.
+- Allowing only images coming from certain Docker Registries.
+- Require all Pods specify resource requests and limits.
+- Prevent conflicting Ingress objects from being created.
+- Enforcing running containers as non-root.
+
+```
+- deploy gatekeeper
+kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/master/deploy/gatekeeper.yaml
+
+
+# Scenario: Enforce Having A Specific Label In Any New Namespace
+# Deploy the Contraint Template
+
+kubectl apply -f k8srequiredlabels_template.yaml
+
+
+# Deploy the Constraints
+
+kubectl apply -f all_ns_must_have_gatekeeper.yaml
+
+
+# Deploy a namespace denied by Policy
+
+kubectl apply -f bad-namespace.yaml
+
+
+# Deploy a namespace allowed by Policy
+
+kubectl apply -f good-namespace.yaml
+
+
+# implementation
+
+kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/master/deploy/gatekeeper.yaml
+
+[ec2-user@ip-10-0-4-172 k8s-opa-gatekeeper-demo]$ kubectl get ns
+NAME                STATUS   AGE
+default             Active   4h6m
+gatekeeper-system   Active   16s
+kube-node-lease     Active   4h6m
+kube-public         Active   4h6m
+kube-system         Active   4h6m
+rapid               Active   92m
+
+
+[ec2-user@ip-10-0-4-172 k8s-opa-gatekeeper-demo]$ kubectl get pods -n gatekeeper-system
+NAME                                             READY   STATUS    RESTARTS      AGE
+gatekeeper-audit-648c95c965-cflxz                1/1     Running   1 (28s ago)   32s
+gatekeeper-controller-manager-7578784dd9-4tbqv   1/1     Running   0             32s
+gatekeeper-controller-manager-7578784dd9-4vw4b   1/1     Running   0             32s
+gatekeeper-controller-manager-7578784dd9-lhf7m   1/1     Running   0             32s
+[ec2-user@ip-10-0-4-172 k8s-opa-gatekeeper-demo]$ 
+
+[ec2-user@ip-10-0-4-172 k8s-opa-gatekeeper-demo]$ kubectl apply -f all_ns_must_have_gatekeeper.yaml
+k8srequiredlabels.constraints.gatekeeper.sh/ns-must-have-gk created
+
+[ec2-user@ip-10-0-4-172 k8s-opa-gatekeeper-demo]$ kubectl apply -f bad-namespace.yaml
+Error from server (Forbidden): error when creating "bad-namespace.yaml": admission webhook "validation.gatekeeper.sh" denied the request:
+ [ns-must-have-gk] you must provide labels: {"gatekeeper"}
+ 
+[ec2-user@ip-10-0-4-172 k8s-opa-gatekeeper-demo]$ kubectl apply -f good-namespace.yaml
+namespace/mynamespace created
+
+
+- non-root-pod:
+----------------
+kubectl apply -f gatekeeper/non-root-pod/k8sno-root-pods_template.yaml
+kubectl apply -f gatekeeper/non-root-pod/no-root-pods.yaml
+kubectl apply -f gatekeeper/non-root-pod/bad-pod.yaml
+kubectl apply -f gatekeeper/non-root-pod/good-pod.yaml
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get constraints
+NAME                                                           ENFORCEMENT-ACTION   TOTAL-VIOLATIONS
+k8snorootpods.constraints.gatekeeper.sh/enforce-no-root-pods   deny                 6
+
+NAME                                                          ENFORCEMENT-ACTION   TOTAL-VIOLATIONS
+k8srequiredlabels.constraints.gatekeeper.sh/ns-must-have-gk   warn                 2
+
+- currently we have two policies applied on our cluster
+
+
+kubectl create ns rapid
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get ns
+NAME                STATUS   AGE
+default             Active   29h
+gatekeeper-system   Active   25h
+kube-node-lease     Active   29h
+kube-public         Active   29h
+kube-system         Active   29h
+mynamespace         Active   25h
+rapid               Active   27h
 
 
 
+test:
+-----
+cd non-root-nginx
+docker build -t rapid-nginx:latest .
+docker tag rapid-nginx:latest testproject1234.jfrog.io/test-docker-docker-local/rapid-nginx:v1
+docker push testproject1234.jfrog.io/test-docker-docker-local/rapid-nginx:v1
+
+kubectl create secret docker-registry artifactory-secret --docker-server=testproject1234.jfrog.io --docker-username="devopsvijay10@gmail.com" --docker-password=”” --docker-email=”OPTIONAL_EMAIL”
+
+kubectl create secret docker-registry artifactory-secret --docker-server=testproject1234.jfrog.io --docker-username="devopsvijay10@gmail.com" --docker-password=”” --docker-email=”OPTIONAL_EMAIL” -n rapid
+
+
+kubectl apply -f rapid-ngnix.yaml -n rapid
+kubectl get pods -n rapid
+
+kubectl delete -f rapid-ngnix.yaml 
+
+kubectl get events -n rapid
+
+troubleshoots:
+--------------
+kubectl get deployment nginx-rapid -n rapid
+kubectl describe deployment nginx-rapid -n rapid
+kubectl get rs -n rapid
+kubectl describe rs -n rapid
+
+
+Your current Deployment YAML already has runAsNonRoot: true and runAsUser: 1000, but it's likely that the base NGINX image is still running as root by default.
+Admission webhook policies still detecting root privileges incorrectly
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
 
 
 
+	🔥 Issue Identified: Permission Denied on Port 80
+	Your Nginx container cannot bind to port 80 due to insufficient permissions. This happens because:
+
+	Ports below 1024 require root privileges.
+	You are running Nginx as appuser (UID 1000), which does not have permission to bind to port 80.
 
 
+kubectl expose deployment nginx-rapid --type=NodePort --port=8080 -n rapid
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get svc -n rapid
+NAME          TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)          AGE
+nginx-rapid   NodePort   172.20.10.49   <none>        8080:32453/TCP   5m21s
 
 
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get nodes -o wide
+NAME                         STATUS   ROLES    AGE   VERSION                INTERNAL-IP   EXTERNAL-IP   OS-IMAGE         KERNEL-VERSION                  CONTAINER-RUNTIME
+ip-10-0-1-248.ec2.internal   Ready    <none>   29h   v1.27.16-eks-aeac579   10.0.1.248    <none>        Amazon Linux 2   5.10.234-225.910.amzn2.x86_64   containerd://1.7.25
+ip-10-0-2-158.ec2.internal   Ready    <none>   29h   v1.27.16-eks-aeac579   10.0.2.158    <none>        Amazon Linux 2   5.10.234-225.910.amzn2.x86_64   containerd://1.7.25
+
+- access from jump server:
+[ec2-user@ip-10-0-4-172 ~]$ curl http://10.0.1.248:32453
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+html { color-scheme: light dark; }
+body { width: 35em; margin: 0 auto;
+font-family: Tahoma, Verdana, Arial, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
 
 
+with service:
+------------
+kubectl delete -f rapid-ngnix.yaml 
+kubectl apply -f rapid-ngnix.yaml 
+kubectl apply -f rapid-service.yaml 
 
 
+implementation:
+--------------
+[ec2-user@ip-10-0-4-172 ~]$ kubectl apply -f rapid-ngnix.yaml -n rapid
+deployment.apps/nginx-rapid created
+[ec2-user@ip-10-0-4-172 ~]$ kubectl apply -f rapid-service.yaml -n rapid
+service/nginx-rapid-service created
 
 
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get pods -n rapid
+NAME                           READY   STATUS    RESTARTS   AGE
+nginx-rapid-6d5788ff99-q9plm   1/1     Running   0          34s
+nginx-rapid-6d5788ff99-x7kbr   1/1     Running   0          34s
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get svc -n rapid
+NAME                  TYPE       CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+nginx-rapid-service   NodePort   172.20.147.123   <none>        80:30080/TCP   28s
 
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get nodes -n rapid -o wide
+NAME                         STATUS   ROLES    AGE   VERSION                INTERNAL-IP   EXTERNAL-IP   OS-IMAGE         KERNEL-VERSION                  CONTAINER-RUNTIME
+ip-10-0-1-248.ec2.internal   Ready    <none>   29h   v1.27.16-eks-aeac579   10.0.1.248    <none>        Amazon Linux 2   5.10.234-225.910.amzn2.x86_64   containerd://1.7.25
+ip-10-0-2-158.ec2.internal   Ready    <none>   29h   v1.27.16-eks-aeac579   10.0.2.158    <none>        Amazon Linux 2   5.10.234-225.910.amzn2.x86_64   containerd://1.7.25
+
+-> GOTO JUMP SERVER AND ACCESS SERVICE
+
+[ec2-user@ip-10-0-4-172 ~]$ curl http://10.0.1.248:30080
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+html { color-scheme: light dark; }
+body { width: 35em; margin: 0 auto;
+font-family: Tahoma, Verdana, Arial, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+
+
+```
 
 
 
