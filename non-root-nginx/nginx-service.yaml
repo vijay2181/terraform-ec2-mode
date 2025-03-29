@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-rapid-service
+  namespace: rapid
+spec:
+  selector:
+    app: nginx-rapid
+  ports:
+    - protocol: TCP
+      port: 80        # Port exposed by the service
+      targetPort: 8080  # Port inside the container (should match containerPort in Deployment)
+      nodePort: 30080 # Optional: If omitted, Kubernetes assigns a random port in the range 30000-32767
+  type: NodePort
