@@ -910,6 +910,8 @@ k8s-nginxingressgroup-db8a477944-434554598.us-east-1.elb.amazonaws.com
 
 if you open still it will redirect to https
 manually chnage to http
+
+reference: https://youtu.be/9n_qJPaYPN4?si=5_4r3_DWaP3RtjTR
 ```
 
 
