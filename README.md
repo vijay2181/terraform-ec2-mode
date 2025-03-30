@@ -573,6 +573,8 @@ Commercial support is available at
 # Access Application using ALB Ingress, even though your pods are in private subnet:
 
 ```
+- you can access the application by creating loadbalancer service, but your pods are in private subnet
+- to access your pods which are in private subnet you can use ingress controller
 - access application which is inside private subnet eks cluster using alb ingreess 
 1.create a oidc provider
 2.create iam policy and servcie account
