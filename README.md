@@ -728,6 +728,7 @@ Update Complete. ⎈Happy Helming!⎈
 
 
 Install the ALB Controller:
+---------------------------
 helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   -n kube-system \
   --set clusterName=demo-eks-QGGshN7P \
@@ -906,6 +907,9 @@ nginx-rapid-ingress   alb     *       k8s-nginxingressgroup-db8a477944-434554598
 
 - once lb is available, access it 
 k8s-nginxingressgroup-db8a477944-434554598.us-east-1.elb.amazonaws.com
+
+if you open still it will redirect to https
+manually chnage to http
 ```
 
 
