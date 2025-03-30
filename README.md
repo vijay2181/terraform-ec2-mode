@@ -570,3 +570,341 @@ Commercial support is available at
 
 
 
+# Access Application using ALB Ingress, even though your pods are in private subnet:
+
+```
+- access application which is inside private subnet eks cluster using alb ingreess 
+1.create a oidc provider
+2.create iam policy and servcie account
+3.install controller using helm
+4.deploy application
+4.access the application using ALB
+
+
+cluster name: demo-eks-QGGshN7P
+
+Step 1: Create an OIDC Provider for EKS
+---------------------------------------
+AWS Load Balancer Controller requires an IAM role, and EKS uses OIDC to authenticate.
+
+Get your EKS OIDC provider:
+aws eks describe-cluster --name demo-eks-QGGshN7P --query "cluster.identity.oidc.issuer" --output text
+
+[ec2-user@ip-10-0-4-172 ~]$ aws eks describe-cluster --name demo-eks-QGGshN7P --query "cluster.identity.oidc.issuer" --output text
+https://oidc.eks.us-east-1.amazonaws.com/id/CD9CE8AC4BB2965EA957C164C2DE9971
+
+
+INSTALL EKSCTL ON JUMP SERVER:
+------------------------------
+sudo curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | sudo tar xz -C /usr/local/bin
+[ec2-user@ip-10-0-4-172 ~]$ eksctl version
+0.206.0
+
+
+Next Step: Associate OIDC Provider with IAM
+Now, you need to associate this OIDC provider with AWS IAM so that the ALB Ingress Controller can authenticate securely.
+Create the OIDC provider:
+eksctl utils associate-iam-oidc-provider \
+  --region us-east-1 \
+  --cluster demo-eks-QGGshN7P \
+  --approve
+  
+  2025-03-30 19:36:30 [ℹ]  IAM Open ID Connect provider is already associated with cluster "demo-eks-QGGshN7P" in "us-east-1"
+
+Your OIDC provider is already associated with the EKS cluster!
+
+
+ Step 2: Create IAM Policy for ALB Ingress Controller
+-------------------------------------------------------
+The AWS Load Balancer Controller needs an IAM policy to manage ALB resources.
+curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+
+
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+  
+  
+[ec2-user@ip-10-0-4-172 ~]$ aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+{
+    "Policy": {
+        "PolicyName": "AWSLoadBalancerControllerIAMPolicy",
+        "PolicyId": "ANPAYS2NUTC7Q3UHNZ6E2",
+        "Arn": "arn:aws:iam::590183962815:policy/AWSLoadBalancerControllerIAMPolicy",
+        "Path": "/",
+        "DefaultVersionId": "v1",
+        "AttachmentCount": 0,
+        "PermissionsBoundaryUsageCount": 0,
+        "IsAttachable": true,
+        "CreateDate": "2025-03-30T19:42:31+00:00",
+        "UpdateDate": "2025-03-30T19:42:31+00:00"
+    }
+}
+
+
+ Copy the IAM Policy ARN, as we will use it in the next step.
+"Arn": "arn:aws:iam::590183962815:policy/AWSLoadBalancerControllerIAMPolicy",
+
+
+
+ Step 3: Create IAM Role & Service Account for ALB Controller
+-------------------------------------------------------------
+Now, we will attach the IAM policy to an IAM role and Kubernetes service account.
+
+eksctl create iamserviceaccount \
+  --cluster demo-eks-QGGshN7P \
+  --namespace kube-system \
+  --name aws-load-balancer-controller \
+  --role-name AmazonEKSLoadBalancerControllerRole \
+  --attach-policy-arn arn:aws:iam::590183962815:policy/AWSLoadBalancerControllerIAMPolicy \
+  --approve
+
+
+
+- it will craete a role with that policy name
+  The AWS Load Balancer Controller runs in the kube-system namespace, but it can manage ALBs for applications in any namespace, including your rapid namespace.
+  So yes, your setup will work because:
+  The controller pod runs in kube-system.
+  It watches Ingress resources across all namespaces.
+  Your application pods stay in rapid, but the ALB will still route traffic to them.
+
+
+  [ec2-user@ip-10-0-4-172 ~]$ eksctl create iamserviceaccount \
+    --cluster demo-eks-QGGshN7P \
+    --namespace kube-system \
+    --name aws-load-balancer-controller \
+    --role-name AmazonEKSLoadBalancerControllerRole \
+    --attach-policy-arn arn:aws:iam::590183962815:policy/AWSLoadBalancerControllerIAMPolicy \
+    --approve
+  2025-03-30 19:55:51 [ℹ]  1 iamserviceaccount (kube-system/aws-load-balancer-controller) was included (based on the include/exclude rules)
+  2025-03-30 19:55:51 [!]  serviceaccounts that exist in Kubernetes will be excluded, use --override-existing-serviceaccounts to override
+  2025-03-30 19:55:51 [ℹ]  1 task: { 
+      2 sequential sub-tasks: { 
+          create IAM role for serviceaccount "kube-system/aws-load-balancer-controller",
+          create serviceaccount "kube-system/aws-load-balancer-controller",
+      } }2025-03-30 19:55:51 [ℹ]  building iamserviceaccount stack "eksctl-demo-eks-QGGshN7P-addon-iamserviceaccount-kube-system-aws-load-balancer-controller"
+  2025-03-30 19:55:52 [ℹ]  deploying stack "eksctl-demo-eks-QGGshN7P-addon-iamserviceaccount-kube-system-aws-load-balancer-controller"
+  2025-03-30 19:55:52 [ℹ]  waiting for CloudFormation stack "eksctl-demo-eks-QGGshN7P-addon-iamserviceaccount-kube-system-aws-load-balancer-controller"
+  2025-03-30 19:56:22 [ℹ]  waiting for CloudFormation stack "eksctl-demo-eks-QGGshN7P-addon-iamserviceaccount-kube-system-aws-load-balancer-controller"
+  2025-03-30 19:56:22 [ℹ]  created serviceaccount "kube-system/aws-load-balancer-controller"
+
+
+If successful, verify the IAM Service Account:
+  [ec2-user@ip-10-0-4-172 ~]$ kubectl get sa -n kube-system | grep aws-load-balancer-controller
+  aws-load-balancer-controller         0         51s
+  [ec2-user@ip-10-0-4-172 ~]$ 
+
+
+
+
+Step 4: Install AWS Load Balancer Controller Using Helm
+--------------------------------------------------------
+INSTALL HELM:
+-------------
+$ curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+$ chmod 700 get_helm.sh
+$ ./get_helm.sh
+
+
+Add the Helm repo & update:
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+
+
+[ec2-user@ip-10-0-4-172 ~]$ helm repo add eks https://aws.github.io/eks-charts
+"eks" has been added to your repositories
+
+[ec2-user@ip-10-0-4-172 ~]$ helm repo update
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "eks" chart repository
+Update Complete. ⎈Happy Helming!⎈
+[ec2-user@ip-10-0-4-172 ~]$ 
+
+
+
+
+Install the ALB Controller:
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=demo-eks-QGGshN7P \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set region=us-east-1 \
+  --set vpcID=vpc-0774623cf3a8aad1e
+  
+- IN THIS VPC vpc-0774623cf3a8aad1e OUR CLUSTER IS CREATED
+
+[ec2-user@ip-10-0-4-172 ~]$ helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=demo-eks-QGGshN7P \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller
+  --set region=us-east-1 \
+  --set vpcID=vpc-0774623cf3a8aad1e
+NAME: aws-load-balancer-controller
+LAST DEPLOYED: Sun Mar 30 20:05:32 2025
+NAMESPACE: kube-system
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+AWS Load Balancer controller installed!
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl get pods -n kube-system | grep aws-load-balancer-controller
+aws-load-balancer-controller-8448cc5b89-tzb4x   1/1     Running   0          36s
+aws-load-balancer-controller-8448cc5b89-x6fb2   1/1     Running   0          36s
+
+
+[ec2-user@ip-10-0-4-172 ~]$ kubectl logs -n kube-system deployment/aws-load-balancer-controller
+Found 2 pods, using pod/aws-load-balancer-controller-8448cc5b89-tzb4x
+{"level":"info","ts":"2025-03-30T20:05:36Z","msg":"version","GitVersion":"v2.12.0","GitCommit":"ab69d951f7f42ce91f5d7880118b8fc7937794f1","BuildDate":"2025-03-10T17:20:40+0000"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"setup","msg":"adding health check for controller"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"setup","msg":"adding readiness check for webhook"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"controller-runtime.webhook","msg":"Registering webhook","path":"/mutate-v1-pod"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"controller-runtime.webhook","msg":"Registering webhook","path":"/mutate-v1-service"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"controller-runtime.webhook","msg":"Registering webhook","path":"/validate-elbv2-k8s-aws-v1beta1-ingressclassparams"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"controller-runtime.webhook","msg":"Registering webhook","path":"/mutate-elbv2-k8s-aws-v1beta1-targetgroupbinding"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"controller-runtime.webhook","msg":"Registering webhook","path":"/validate-elbv2-k8s-aws-v1beta1-targetgroupbinding"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"controller-runtime.webhook","msg":"Registering webhook","path":"/validate-networking-v1-ingress"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"setup","msg":"starting podInfo repo"}
+{"level":"info","ts":"2025-03-30T20:05:36Z","logger":"setup","msg":"starting deferred tgb reconciler"}
+{"level":"info","ts":"2025-03-30T20:05:38Z","logger":"controller-runtime.metrics","msg":"Starting metrics server"}
+{"level":"info","ts":"2025-03-30T20:05:38Z","logger":"controller-runtime.webhook","msg":"Starting webhook server"}
+{"level":"info","ts":"2025-03-30T20:05:38Z","logger":"controller-runtime.metrics","msg":"Serving metrics server","bindAddress":":8080","secure":false}
+{"level":"info","ts":"2025-03-30T20:05:38Z","msg":"starting server","name":"health probe","addr":"[::]:61779"}
+{"level":"info","ts":"2025-03-30T20:05:38Z","logger":"controller-runtime.certwatcher","msg":"Updated current TLS certificate"}
+{"level":"info","ts":"2025-03-30T20:05:38Z","logger":"controller-runtime.webhook","msg":"Serving webhook server","host":"","port":9443}
+{"level":"info","ts":"2025-03-30T20:05:38Z","logger":"controller-runtime.certwatcher","msg":"Starting certificate watcher"}
+{"level":"info","ts":"2025-03-30T20:05:38Z","msg":"attempting to acquire leader lease kube-system/aws-load-balancer-controller-leader..."}
+
+
+
+step 5: Deploy sample application:
+----------------------------------
+[ec2-user@ip-10-0-4-172 test]$ cat non-root-deployment.yaml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-rapid
+  namespace: rapid
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-rapid
+  template:
+    metadata:
+      labels:
+        app: nginx-rapid
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000  # Ensures correct file system permissions
+      containers:
+        - name: nginx-rapid
+          image: testproject1234.jfrog.io/test-docker-docker-local/rapid-nginx:v2  # Use 'latest' tag
+          imagePullPolicy: Always  # Ensures the latest image is always pulled
+          ports:
+            - containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      imagePullSecrets:
+        - name: artifactory-secret  # Ensure this secret exists in the "rapid" namespace
+
+---------------------
+
+[ec2-user@ip-10-0-4-172 test]$ cat service.yaml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-rapid-service
+  namespace: rapid
+spec:
+  selector:
+    app: nginx-rapid
+  ports:
+    - protocol: TCP
+      port: 80        # Exposed service port
+      targetPort: 8080  # Container port
+  type: NodePort
+[ec2-user@ip-10-0-4-172 test]$ 
+
+-----------------------
+
+[ec2-user@ip-10-0-4-172 test]$ cat ingress.yaml 
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-rapid-ingress
+  namespace: rapid
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/group.name: "nginx-ingress-group"
+    alb.ingress.kubernetes.io/healthcheck-path: "/"
+    alb.ingress.kubernetes.io/subnets: subnet-094ec44e1d74a96ae, subnet-089d86a458321b72c #these are public subnets of cluster vpc where it got deployed, son in this subnets iam deploying load balancer
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-rapid-service
+                port:
+                  number: 80
+
+-------------------------------
+
+kubectl apply -f non-root-deployment.yaml -n rapid
+
+kubectl get pods -n rapid
+
+[ec2-user@ip-10-0-4-172 test]$ kubectl apply -f service.yaml -n rapid
+service/nginx-rapid-service created
+
+[ec2-user@ip-10-0-4-172 test]$ kubectl get svc -n rapid
+NAME                  TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+nginx-rapid-service   NodePort   172.20.66.216   <none>        80:31400/TCP   5s
+
+[ec2-user@ip-10-0-4-172 test]$ kubectl get svc -n kube-system
+NAME                                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
+aws-load-balancer-webhook-service   ClusterIP   172.20.211.51   <none>        443/TCP         33m
+kube-dns                            ClusterIP   172.20.0.10     <none>        53/UDP,53/TCP   2d14h
+
+
+[ec2-user@ip-10-0-4-172 test]$ kubectl apply -f ingress.yaml 
+ingress.networking.k8s.io/nginx-rapid-ingress created
+
+[ec2-user@ip-10-0-4-172 test]$ kubectl get ingress -A
+
+[ec2-user@ip-10-0-4-172 test]$ kubectl get ingress -n rapid
+NAME                  CLASS   HOSTS   ADDRESS                                                                  PORTS   AGE
+nginx-rapid-ingress   alb     *       k8s-nginxingressgroup-db8a477944-434554598.us-east-1.elb.amazonaws.com   80      35s
+[ec2-user@ip-10-0-4-172 test]$ 
+
+
+- wait for sometime, it will craete loadbalancer, you can check there
+- check rules 
+- default port of load balancer is 80
+- check target groups and health checks
+- in lb, we can use annotations to route traffic from 80 to 443 -> https and attach certifcates
+- when the loadbalancer state is active, we can use dns name of load balancer to access that
+
+- once lb is available, access it 
+k8s-nginxingressgroup-db8a477944-434554598.us-east-1.elb.amazonaws.com
+```
+
+
+
