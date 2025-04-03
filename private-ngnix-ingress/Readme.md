@@ -14,26 +14,41 @@ rapid       nginx-rapid-ingress   alb     *                                     
 
 - we need to use this nlb: k8s-ingressn-ingressn-861aa874d6-877187e88114cfc9.elb.eu-west-1.amazonaws.com
 
-```
-# Create DNS record
-ELB_DNS="k8s-ingressn-ingressn-861aa874d6-877187e88114cfc9.elb.eu-west-1.amazonaws.com"
-HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name rapid.com --query 'HostedZones[0].Id' --output text)
+If the AWS CLI method isn't working, you can manually create the DNS record using the **AWS Management Console**. Follow these steps:  
 
-cat > dns-record.json <<EOF
-{
-  "Changes": [{
-    "Action": "CREATE",
-    "ResourceRecordSet": {
-      "Name": "demo.rapid.com",
-      "Type": "CNAME",
-      "TTL": 300,
-      "ResourceRecords": [{ "Value": "$ELB_DNS" }]
-    }
-  }]
-}
-EOF
+---
 
-aws route53 change-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID --change-batch file://dns-record.json
+### **✅ Steps to Add a CNAME Record in AWS Route 53 UI**
+
+1. **Go to the AWS Route 53 Console**  
+   👉 [https://console.aws.amazon.com/route53/](https://console.aws.amazon.com/route53/)
+
+2. **Navigate to Hosted Zones**  
+   - In the left sidebar, click **"Hosted zones"**.  
+   - Find and click on the hosted zone **"rapid.com"**.
+
+3. **Create a New Record**  
+   - Click the **"Create record"** button.  
+
+4. **Fill in Record Details**  
+   - **Record Name** → `demo.rapid.com`  
+   - **Record Type** → `CNAME`  
+   - **Value** →  
+     ```
+     k8s-ingressn-ingressn-861aa874d6-877187e88114cfc9.elb.eu-west-1.amazonaws.com
+     ```
+   - **TTL (Time to Live)** → `300`  
+   - **Routing Policy** → `Simple routing`  
+
+5. **Save the Record**  
+   - Click **"Create records"** to save the new DNS entry.
+
+---
+
+### **✅ Verify the DNS Record**
+To check if the record has been propagated, open a **Command Prompt (cmd)** and run:
+```cmd
+nslookup demo.rapid.com
 ```
 
 - add jump server security group inside nlb security group on 443, ICMP ports
