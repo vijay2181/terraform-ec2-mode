@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-rapid-svc
+  namespace: rapid
+spec:
+  selector:
+    app: demo-rapid
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP  #Keep it internal
